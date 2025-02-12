@@ -93,11 +93,13 @@ test_loss, test_accuracy = model.evaluate(test_generator)
 
 # 정확도 출력
 print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
-설명:
-데이터 전처리 (ImageDataGenerator): 이미지를 실시간으로 증강하고 정규화하여 모델이 더 잘 학습할 수 있도록 돕습니다.
-MobileNetV2 모델: ImageNet에서 미리 학습된 MobileNetV2 모델을 불러옵니다. include_top=False로 최상위 분류 레이어는 제외합니다.
-분류 레이어 추가: 모델의 출력 부분에 Dense 레이어를 추가하여 5개의 클래스를 분류할 수 있도록 합니다.
-컴파일 및 학습: Adam 옵티마이저와 categorical_crossentropy 손실 함수를 사용하여 모델을 컴파일합니다. EarlyStopping을 사용해 과적합을 방지하고 최상의 모델을 선택합니다.
-모델 평가: 테스트 데이터를 사용하여 모델의 정확도를 평가하고 출력합니다.
+
+설명:\n
+데이터 전처리 (ImageDataGenerator): 이미지를 실시간으로 증강하고 정규화하여 모델이 더 잘 학습할 수 있도록 돕습니다.\n
+MobileNetV2 모델: ImageNet에서 미리 학습된 MobileNetV2 모델을 불러옵니다. include_top=False로 최상위 분류 레이어는 제외합니다.\n
+분류 레이어 추가: 모델의 출력 부분에 Dense 레이어를 추가하여 5개의 클래스를 분류할 수 있도록 합니다.\n
+컴파일 및 학습: Adam 옵티마이저와 categorical_crossentropy 손실 함수를 사용하여 모델을 컴파일합니다. EarlyStopping을 사용해 과적합을 방지하고 최상의 모델을 선택합니다.\n
+모델 평가: 테스트 데이터를 사용하여 모델의 정확도를 평가하고 출력합니다.\n
+
 결과:
 테스트 데이터에서 모델이 분류한 정확도를 Test Accuracy로 출력하게 됩니다.
