@@ -1,0 +1,137 @@
+개선된 코드 구현:
+python
+복사
+import os
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras import layers, models
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+import re  # 정규표현식 사용을 위한 라이브러리
+
+# 꽃 종류에 대한 레이블을 매핑 (파일명에서 추출된 꽃 종류로 분류)
+flower_labels = ['rose', 'tulip', 'iris', 'lily', 'lotus']
+
+# 1. 데이터 전처리 (파일명에서 꽃 종류 추출)
+def get_flower_label_from_filename(filename):
+    # 정규표현식으로 파일명에서 꽃 종류 추출
+    for label in flower_labels:
+        if re.search(rf"\b{label}\b", filename):
+            return label
+    return None
+
+# 2. 이미지 데이터를 파일명 기반으로 레이블 지정
+def generate_image_data_with_labels(data_dir, image_size=(224, 224)):
+    image_paths = []
+    labels = []
+
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".jpg"):
+            image_paths.append(os.path.join(data_dir, filename))
+            label = get_flower_label_from_filename(filename)
+            if label:
+                labels.append(label)
+    
+    return image_paths, labels
+
+# 데이터 경로 설정
+train_dir = 'train_data'  # 학습 데이터가 있는 폴더
+test_dir = 'test_data'    # 테스트 데이터가 있는 폴더
+
+# 이미지 데이터와 레이블 생성
+train_image_paths, train_labels = generate_image_data_with_labels(train_dir)
+test_image_paths, test_labels = generate_image_data_with_labels(test_dir)
+
+# 레이블을 숫자 인덱스로 변환
+label_map = {label: idx for idx, label in enumerate(flower_labels)}
+train_labels = [label_map[label] for label in train_labels]
+test_labels = [label_map[label] for label in test_labels]
+
+# 3. 데이터 전처리 및 배치 생성 (ImageDataGenerator 사용)
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # 이미지 픽셀값을 [0, 1] 범위로 정규화
+    rotation_range=20,  # 회전 범위
+    width_shift_range=0.2,  # 수평 이동 범위
+    height_shift_range=0.2,  # 수직 이동 범위
+    shear_range=0.2,  # 기울이기
+    zoom_range=0.2,  # 확대/축소
+    horizontal_flip=True,  # 수평 뒤집기
+    fill_mode='nearest'  # 비어있는 공간 채우기
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(224, 224),  # MobileNetV2의 입력 사이즈 (224x224)
+    batch_size=32,
+    class_mode='categorical',  # 다중 클래스 분류
+    shuffle=True
+)
+
+test_generator = test_datagen.flow_from_directory(
+    test_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical',
+    shuffle=False
+)
+
+# 4. 모델 구축
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+
+# MobileNetV2 모델의 마지막 레이어를 제외하고 추가 학습
+for layer in base_model.layers:
+    layer.trainable = False  # pre-trained weights를 사용할 때는 대부분의 레이어를 고정시킴
+
+# 새로운 classifier 부분 추가
+model = models.Sequential([
+    base_model,
+    layers.GlobalAveragePooling2D(),
+    layers.Dense(512, activation='relu'),
+    layers.Dense(5, activation='softmax')  # 5개의 클래스로 분류 (꽃 5종류)
+])
+
+# 5. 모델 컴파일
+model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics=['accuracy'])
+
+# 6. 모델 학습
+early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+history = model.fit(
+    train_generator,
+    epochs=20,  # 필요에 따라 epoch 수를 조정하세요
+    validation_data=test_generator,
+    validation_steps=test_generator.samples // test_generator.batch_size,
+    steps_per_epoch=train_generator.samples // train_generator.batch_size,
+    callbacks=[early_stop]
+)
+
+# 7. 모델 평가 (테스트 데이터에서 정확도 확인)
+test_loss, test_accuracy = model.evaluate(test_generator)
+
+# 정확도 출력
+print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+설명:
+파일명에서 꽃 종류 추출:
+
+get_flower_label_from_filename 함수에서 정규 표현식을 사용하여 각 이미지 파일명에서 꽃 종류를 추출합니다. 예를 들어, rose_1.jpg의 경우 "rose"를 추출하게 됩니다.
+generate_image_data_with_labels 함수는 주어진 데이터 디렉토리에서 이미지 경로와 레이블을 추출하여 리스트로 반환합니다.
+데이터 전처리:
+
+이미지 파일 경로와 함께 각 이미지의 레이블을 숫자(0, 1, 2, ...)로 변환합니다.
+train_data와 test_data 디렉토리에서 이미지 파일을 읽어와 데이터와 레이블을 준비합니다.
+ImageDataGenerator:
+
+train_datagen과 test_datagen을 사용하여 이미지 증강과 정규화를 수행합니다.
+모델 학습:
+
+MobileNetV2 모델을 불러와서 마지막 레이어만 새로운 분류 레이어로 교체합니다.
+EarlyStopping을 사용하여 과적합을 방지합니다.
+평가:
+
+학습된 모델을 테스트 데이터에 대해 평가하고 정확도를 출력합니다.
+주의사항:
+이미지 파일명은 반드시 꽃 종류를 정확히 포함해야 합니다(예: rose_1.jpg, tulip_2.jpg, 등). 정규 표현식을 사용하여 꽃 종류를 정확히 추출합니다.
+train_data와 test_data에 적절한 이미지가 준비되어 있어야 합니다.
