@@ -1,0 +1,163 @@
+콘크리트 크랙을 분류하는 이진 분류 모델을 MobileNetV2를 사용하여 구현하는 예시 코드를 제공하겠습니다. 각 이미지가 train_data 폴더에 있고, 파일명이 "img_1_positive.jpg", "img_2_negative.jpg"와 같이 라벨링되어 있다고 가정합니다. 이를 바탕으로 이미지를 로드하고 라벨을 추출하여 학습하는 모델을 구성합니다.
+
+주요 단계:
+이미지 파일명으로 라벨 추출: 파일명이 positive인지 negative인지에 따라 라벨을 추출합니다.
+MobileNetV2 모델 사용: 전이 학습을 위한 MobileNetV2 모델을 사용하여 이진 분류 문제를 해결합니다.
+훈련 및 평가: 모델을 훈련시키고, 테스트 데이터에서 정확도를 평가합니다.
+필요한 라이브러리 설치:
+```
+pip install tensorflow numpy matplotlib
+```
+코드 예시:
+```
+import tensorflow as tf
+import os
+import re
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras import layers, models
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+```
+
+# 1. 데이터 전처리 (파일명에서 라벨 추출)
+```
+def get_label_from_filename(filename):
+    # 파일명이 'positive' 또는 'negative'를 포함하는지 체크
+    if 'positive' in filename:
+        return 1  # 크랙 있음
+    elif 'negative' in filename:
+        return 0  # 크랙 없음
+    else:
+        return None  # 라벨을 찾을 수 없는 경우 (오류 처리)
+```
+
+# 2. 이미지 데이터와 레이블 생성
+```
+def generate_image_data_with_labels(data_dir, image_size=(224, 224)):
+    image_paths = []
+    labels = []
+
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".jpg"):
+            image_paths.append(os.path.join(data_dir, filename))
+            label = get_label_from_filename(filename)
+            if label is not None:
+                labels.append(label)
+    
+    return image_paths, labels
+
+# 데이터 경로 설정
+train_dir = 'train_data'  # 학습 데이터가 있는 폴더
+test_dir = 'test_data'    # 테스트 데이터가 있는 폴더
+
+# 이미지 데이터와 레이블 생성
+train_image_paths, train_labels = generate_image_data_with_labels(train_dir)
+test_image_paths, test_labels = generate_image_data_with_labels(test_dir)
+```
+
+# 3. 데이터 전처리 및 배치 생성 (ImageDataGenerator 사용)
+```
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # 이미지 픽셀값을 [0, 1] 범위로 정규화
+    rotation_range=20,  # 회전 범위
+    width_shift_range=0.2,  # 수평 이동 범위
+    height_shift_range=0.2,  # 수직 이동 범위
+    shear_range=0.2,  # 기울이기
+    zoom_range=0.2,  # 확대/축소
+    horizontal_flip=True,  # 수평 뒤집기
+    fill_mode='nearest'  # 비어있는 공간 채우기
+)
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(224, 224),  # MobileNetV2의 입력 사이즈 (224x224)
+    batch_size=32,
+    class_mode='binary',  # 이진 분류
+    shuffle=True
+)
+
+test_generator = test_datagen.flow_from_directory(
+    test_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='binary',
+    shuffle=False
+)
+```
+
+# 4. 모델 구축
+```
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+
+# MobileNetV2 모델의 마지막 레이어를 제외하고 추가 학습
+for layer in base_model.layers:
+    layer.trainable = False  # pre-trained weights를 사용할 때는 대부분의 레이어를 고정시킴
+
+# 새로운 classifier 부분 추가
+model = models.Sequential([
+    base_model,
+    layers.GlobalAveragePooling2D(),
+    layers.Dense(512, activation='relu'),
+    layers.Dense(1, activation='sigmoid')  # 이진 분류는 sigmoid를 사용
+])
+```
+
+# 5. 모델 컴파일
+```
+model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+```
+
+# 6. 모델 학습
+```
+early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+history = model.fit(
+    train_generator,
+    epochs=20,  # 필요에 따라 epoch 수를 조정하세요
+    validation_data=test_generator,
+    validation_steps=test_generator.samples // test_generator.batch_size,
+    steps_per_epoch=train_generator.samples // train_generator.batch_size,
+    callbacks=[early_stop]
+)
+```
+
+# 7. 모델 평가 (테스트 데이터에서 정확도 확인)
+```
+test_loss, test_accuracy = model.evaluate(test_generator)
+```
+
+# 정확도 출력
+```
+print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+```
+설명:
+파일명에서 라벨 추출:
+
+get_label_from_filename 함수에서 파일명이 "positive"인 경우에는 1(크랙 있음), "negative"인 경우에는 0(크랙 없음)으로 라벨을 지정합니다.
+데이터 전처리:
+
+generate_image_data_with_labels 함수는 지정된 디렉토리에서 이미지 파일을 읽고, 파일명에 따라 라벨을 추출하여 이미지 경로와 함께 저장합니다.
+ImageDataGenerator:
+
+train_datagen과 test_datagen을 사용하여 이미지 증강 및 정규화를 수행하고, 배치 생성기를 설정하여 학습 및 테스트에 사용할 데이터를 준비합니다.
+class_mode='binary'로 설정하여 이진 분류 문제로 데이터를 준비합니다.
+MobileNetV2 모델 구축:
+
+MobileNetV2를 불러오고, include_top=False로 최상위 분류 레이어를 제외한 후, 마지막에 GlobalAveragePooling2D와 Dense 레이어를 추가하여 이진 분류를 위한 네트워크를 완성합니다.
+마지막 출력 레이어는 이진 분류를 위해 sigmoid 활성화 함수를 사용합니다.
+모델 컴파일 및 학습:
+
+이진 분류를 위한 binary_crossentropy 손실 함수와 Adam 옵티마이저를 사용하여 모델을 컴파일합니다.
+EarlyStopping을 사용하여 과적합을 방지하고, restore_best_weights=True로 최적 모델을 선택합니다.
+모델 평가:
+
+학습이 완료된 후, 테스트 데이터셋에 대해 모델을 평가하고, 정확도를 출력합니다.
+결과:
+테스트 데이터에 대한 모델의 정확도가 Test Accuracy로 출력됩니다. 모델이 positive와 negative를 잘 분류했는지 확인할 수 있습니다.
+
+데이터 준비:
+train_data와 test_data 폴더 내에 각각 positive와 negative가 포함된 이미지가 준비되어야 합니다.
+각 이미지 파일명은 반드시 positive 또는 negative를 포함하고 있어야 하며, 예시와 같이 라벨을 자동으로 추출할 수 있습니다.
