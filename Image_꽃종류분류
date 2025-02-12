@@ -1,6 +1,5 @@
 개선된 코드 구현:
-python
-복사
+```
 import os
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -9,19 +8,24 @@ from tensorflow.keras import layers, models
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 import re  # 정규표현식 사용을 위한 라이브러리
+```
 
 # 꽃 종류에 대한 레이블을 매핑 (파일명에서 추출된 꽃 종류로 분류)
+```
 flower_labels = ['rose', 'tulip', 'iris', 'lily', 'lotus']
-
+```
 # 1. 데이터 전처리 (파일명에서 꽃 종류 추출)
+```
 def get_flower_label_from_filename(filename):
     # 정규표현식으로 파일명에서 꽃 종류 추출
     for label in flower_labels:
         if re.search(rf"\b{label}\b", filename):
             return label
     return None
+```
 
 # 2. 이미지 데이터를 파일명 기반으로 레이블 지정
+```
 def generate_image_data_with_labels(data_dir, image_size=(224, 224)):
     image_paths = []
     labels = []
@@ -47,8 +51,10 @@ test_image_paths, test_labels = generate_image_data_with_labels(test_dir)
 label_map = {label: idx for idx, label in enumerate(flower_labels)}
 train_labels = [label_map[label] for label in train_labels]
 test_labels = [label_map[label] for label in test_labels]
+```
 
 # 3. 데이터 전처리 및 배치 생성 (ImageDataGenerator 사용)
+```
 train_datagen = ImageDataGenerator(
     rescale=1./255,  # 이미지 픽셀값을 [0, 1] 범위로 정규화
     rotation_range=20,  # 회전 범위
@@ -77,8 +83,10 @@ test_generator = test_datagen.flow_from_directory(
     class_mode='categorical',
     shuffle=False
 )
+```
 
 # 4. 모델 구축
+```
 base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
 
 # MobileNetV2 모델의 마지막 레이어를 제외하고 추가 학습
@@ -92,11 +100,15 @@ model = models.Sequential([
     layers.Dense(512, activation='relu'),
     layers.Dense(5, activation='softmax')  # 5개의 클래스로 분류 (꽃 5종류)
 ])
+```
 
 # 5. 모델 컴파일
+```
 model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics=['accuracy'])
+```
 
 # 6. 모델 학습
+```
 early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
 history = model.fit(
@@ -107,12 +119,16 @@ history = model.fit(
     steps_per_epoch=train_generator.samples // train_generator.batch_size,
     callbacks=[early_stop]
 )
+```
 
 # 7. 모델 평가 (테스트 데이터에서 정확도 확인)
+```
 test_loss, test_accuracy = model.evaluate(test_generator)
 
 # 정확도 출력
 print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+```
+
 설명:
 파일명에서 꽃 종류 추출:
 
