@@ -1,0 +1,135 @@
+텍스트 데이터로 감정을 예측하는 모델을 만드는 과정을 단계별로 더 자세히 설명할게요. 여기서는 BERT 모델을 사용하여 텍스트 분류 작업을 하고, TensorFlow를 사용한 구현 방법에 대해 설명합니다.
+
+1. 데이터 준비
+먼저, 감정 예측을 위한 데이터를 준비해야 합니다. 여러분은 text와 label이라는 두 개의 열이 있는 데이터 프레임을 가지고 있다고 했죠. 예를 들어, text는 문장이고, label은 그 문장이 어떤 감정을 나타내는지에 대한 레이블(예: 기쁨, 슬픔, 분노 등)입니다.
+
+python
+복사
+import pandas as pd
+
+# 데이터 예시
+df = pd.read_csv('your_dataset.csv')  # 'your_dataset.csv'는 여러분의 데이터 파일입니다.
+print(df.head())  # 데이터 상위 5개 출력
+2. 데이터 전처리
+텍스트 데이터는 모델에 입력할 수 있는 숫자 형식으로 변환해야 합니다. 이 작업을 토큰화라고 합니다. BERT 모델을 사용할 때는 BERT 토크나이저가 필요합니다. 이 토크나이저는 문장을 BERT가 이해할 수 있는 숫자로 변환합니다.
+
+BERT 토크나이저는 transformers 라이브러리에서 제공됩니다.
+
+2.1. 데이터셋을 훈련 데이터와 테스트 데이터로 분리
+우리는 전체 데이터를 훈련 데이터와 테스트 데이터로 나누어야 합니다. 훈련 데이터는 모델을 학습시키는 데 사용하고, 테스트 데이터는 모델 성능을 평가하는 데 사용됩니다.
+
+python
+복사
+from sklearn.model_selection import train_test_split
+
+# 'text'와 'label'을 훈련/테스트 데이터로 분리
+X_train, X_test, y_train, y_test = train_test_split(df['text'], df['label'], test_size=0.2, random_state=42)
+
+# 분리된 데이터 확인
+print(X_train[:5])  # 훈련 데이터의 첫 5개 문장
+print(y_train[:5])  # 훈련 데이터의 첫 5개 레이블
+2.2. 텍스트를 BERT의 입력 형식으로 변환
+BERT는 텍스트를 입력받을 때 input_ids, attention_mask와 같은 특별한 형식으로 데이터를 받습니다. input_ids는 각 단어를 BERT가 이해할 수 있는 숫자 ID로 변환한 것이고, attention_mask는 패딩된 부분을 무시하도록 지정하는 역할을 합니다.
+
+python
+복사
+from transformers import BertTokenizer
+
+# BERT 토크나이저 로드
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+# 텍스트를 BERT 형식으로 인코딩
+def encode_texts(texts):
+    return tokenizer(texts.tolist(), padding=True, truncation=True, max_length=128, return_tensors='tf')
+
+train_encodings = encode_texts(X_train)
+test_encodings = encode_texts(X_test)
+
+# 입력 데이터 형태 확인
+print(train_encodings['input_ids'][0])  # 첫 번째 문장의 input_ids 출력
+3. 라벨 인코딩
+모델은 텍스트가 아니라 숫자를 처리하므로, 감정 레이블(기쁨, 분노, 슬픔 등)을 숫자로 변환해야 합니다. 이를 위해 라벨 인코딩을 사용합니다.
+
+python
+복사
+from sklearn.preprocessing import LabelEncoder
+
+# 레이블 인코딩
+label_encoder = LabelEncoder()
+y_train_encoded = label_encoder.fit_transform(y_train)
+y_test_encoded = label_encoder.transform(y_test)
+
+# one-hot 인코딩
+y_train_onehot = tf.keras.utils.to_categorical(y_train_encoded)
+y_test_onehot = tf.keras.utils.to_categorical(y_test_encoded)
+
+# 인코딩된 레이블 확인
+print(y_train_encoded[:5])  # 훈련 데이터의 첫 5개 레이블
+4. BERT 모델 만들기 (TensorFlow)
+이제 BERT 모델을 만들어 학습시킬 차례입니다. Hugging Face의 transformers 라이브러리를 사용해서 BERT 모델을 쉽게 불러올 수 있습니다. TFBertForSequenceClassification은 텍스트 분류 작업에 맞는 BERT 모델입니다.
+
+4.1. 모델 구성
+python
+복사
+from transformers import TFBertForSequenceClassification
+import tensorflow as tf
+
+# BERT 모델 로드 (감정 분류를 위한 모델)
+model = TFBertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=len(label_encoder.classes_))
+
+# 모델 컴파일 (옵티마이저, 손실 함수, 성능 평가 지표 설정)
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5), 
+              loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True), 
+              metrics=['accuracy'])
+4.2. 모델 학습
+이제 모델을 학습시킵니다. BERT 모델은 input_ids와 attention_mask를 입력으로 받습니다. 따라서 train_encodings와 test_encodings에서 input_ids와 attention_mask를 추출하여 모델에 전달해야 합니다.
+
+python
+복사
+# 모델 학습
+history = model.fit(
+    {'input_ids': train_encodings['input_ids'], 'attention_mask': train_encodings['attention_mask']},
+    y_train_onehot,
+    epochs=3,  # 학습을 3번 반복
+    batch_size=16,  # 배치 크기
+    validation_data=(
+        {'input_ids': test_encodings['input_ids'], 'attention_mask': test_encodings['attention_mask']},
+        y_test_onehot
+    )
+)
+5. 모델 평가
+모델이 학습을 마친 후, 테스트 데이터를 사용하여 모델의 성능을 평가합니다.
+
+python
+복사
+# 모델 평가
+eval_result = model.evaluate(
+    {'input_ids': test_encodings['input_ids'], 'attention_mask': test_encodings['attention_mask']},
+    y_test_onehot
+)
+
+print(f"Test loss: {eval_result[0]}")
+print(f"Test accuracy: {eval_result[1]}")
+6. 예측
+모델이 학습된 후, 새로운 데이터를 예측할 수 있습니다. 예를 들어, X_test에 있는 문장들의 감정을 예측해 보겠습니다.
+
+python
+복사
+# 예측
+predictions = model.predict(
+    {'input_ids': test_encodings['input_ids'], 'attention_mask': test_encodings['attention_mask']}
+)
+
+# 예측 결과를 가장 높은 확률을 가진 레이블로 변환
+predicted_labels = label_encoder.inverse_transform(predictions[0].argmax(axis=1))
+
+# 예측 결과 출력
+print(predicted_labels[:5])  # 첫 5개 예측 결과 출력
+7. 결론
+데이터 준비: 텍스트 데이터를 훈련/테스트 데이터로 분리하고, BERT 토크나이저를 사용해 문장을 BERT 입력 형식으로 변환합니다.
+라벨 인코딩: 감정 레이블을 숫자로 변환합니다.
+모델 구성: Hugging Face의 BERT 모델을 사용하여 텍스트 분류 모델을 만듭니다.
+모델 학습: 학습 데이터를 통해 모델을 훈련합니다.
+모델 평가: 테스트 데이터를 사용하여 모델을 평가합니다.
+예측: 학습된 모델을 사용해 새로운 문장의 감정을 예측합니다.
+이러한 과정을 통해 감정 분석 모델을 만들 수 있습니다.
