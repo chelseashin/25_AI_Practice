@@ -1,0 +1,124 @@
+제공하신 데이터 형식에 맞게 텍스트 데이터를 처리하고, 긍정/부정을 예측하는 모델을 훈련한 후, 예측된 결과를 csv 파일로 저장하며, 가장 좋은 모델을 .h5 파일로 저장하는 방법을 설명드리겠습니다.
+
+문제 해결을 위한 주요 단계
+데이터 로딩 및 전처리: 주어진 train_data를 사용하여 훈련하고, test_data는 레이블이 없으므로 예측을 수행.
+모델 학습 및 평가: 학습 데이터로 모델을 학습하고, 검증 데이터를 통해 모델 성능을 평가.
+예측 수행: test_data에 대해 예측을 수행하고, 그 결과를 csv 파일로 저장.
+모델 저장: 가장 성능이 좋은 모델을 .h5 파일로 저장.
+1. 데이터 로딩 및 전처리
+먼저, train_data와 test_data를 불러와서 적절하게 처리합니다. 여기서는 train_data에 text와 label이, test_data에는 text만 있다는 가정입니다.
+
+python
+복사
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from transformers import BertTokenizer
+import tensorflow as tf
+
+# train_data와 test_data 불러오기 (CSV 파일로 되어 있다고 가정)
+train_data = pd.read_csv('train_data.csv')
+test_data = pd.read_csv('test_data.csv')
+
+# 'train_data'에서 텍스트와 레이블 분리
+X_train = train_data['text'].values
+y_train = train_data['label'].values
+
+# 'test_data'에서 텍스트만 분리
+X_test = test_data['text'].values
+
+# 훈련 데이터와 검증 데이터를 80% / 20%로 분리
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+
+# BERT 토크나이저 로드
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+# BERT 모델 입력 형식으로 변환
+def encode_texts(texts):
+    return tokenizer(texts.tolist(), padding=True, truncation=True, max_length=128, return_tensors='tf')
+
+train_encodings = encode_texts(X_train)
+val_encodings = encode_texts(X_val)
+test_encodings = encode_texts(X_test)
+2. 라벨 인코딩
+라벨은 0과 1로 되어 있으므로, 이를 그대로 사용하지만, one-hot 인코딩을 적용하여 모델에 전달합니다.
+
+python
+복사
+# 라벨을 one-hot 인코딩
+y_train_onehot = tf.keras.utils.to_categorical(y_train)
+y_val_onehot = tf.keras.utils.to_categorical(y_val)
+3. 모델 구성
+여기서 BERT 모델을 사용하여 텍스트 분류를 수행합니다. TFBertForSequenceClassification 모델을 사용해 이진 분류 문제를 해결합니다.
+
+python
+복사
+from transformers import TFBertForSequenceClassification
+
+# BERT 모델 로드 (이진 분류)
+model = TFBertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=2)
+
+# 모델 컴파일
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5), 
+              loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True), 
+              metrics=['accuracy'])
+
+# 모델 학습
+history = model.fit(
+    {'input_ids': train_encodings['input_ids'], 'attention_mask': train_encodings['attention_mask']},
+    y_train_onehot,
+    epochs=3,
+    batch_size=16,
+    validation_data=(
+        {'input_ids': val_encodings['input_ids'], 'attention_mask': val_encodings['attention_mask']},
+        y_val_onehot
+    )
+)
+4. 모델 평가
+검증 데이터(val_data)로 모델의 성능을 평가하고, 성능이 가장 좋은 모델을 저장할 준비를 합니다.
+
+python
+복사
+# 모델 평가
+eval_result = model.evaluate(
+    {'input_ids': val_encodings['input_ids'], 'attention_mask': val_encodings['attention_mask']},
+    y_val_onehot
+)
+
+print(f"Validation loss: {eval_result[0]}")
+print(f"Validation accuracy: {eval_result[1]}")
+5. 예측 수행
+이제 test_data에 대한 예측을 수행합니다. test_data에는 label이 없으므로, 예측 결과만 생성합니다.
+
+python
+복사
+# 예측
+predictions = model.predict(
+    {'input_ids': test_encodings['input_ids'], 'attention_mask': test_encodings['attention_mask']}
+)
+
+# 확률값을 가장 높은 라벨로 변환 (0 또는 1)
+predicted_labels = predictions[0].argmax(axis=1)
+
+# 예측 결과를 DataFrame으로 변환
+test_data['label'] = predicted_labels
+
+# 예측된 label을 포함한 test_data 저장
+test_data.to_csv('predicted_test_data.csv', index=False)
+6. 모델 저장
+가장 좋은 모델을 .h5 파일로 저장하려면 학습이 끝난 후 model.save()를 사용하여 모델을 저장합니다. 모델 저장 시 best_model.h5로 저장할 수 있습니다.
+
+python
+복사
+# 모델 저장
+model.save('best_model.h5')
+전체 코드 요약
+데이터 로딩 및 전처리: train_data.csv와 test_data.csv를 불러와서 텍스트를 BERT 입력 형식으로 변환.
+모델 학습: BERT 모델을 사용하여 학습 및 검증.
+모델 평가: 검증 데이터를 사용하여 모델 성능을 평가.
+예측: test_data에 대해 예측을 수행하고 결과를 predicted_test_data.csv로 저장.
+모델 저장: 학습한 모델을 best_model.h5로 저장.
+참고 사항
+BERT 모델 학습: 학습에 시간이 많이 걸릴 수 있으므로, GPU를 사용하면 훨씬 빠르게 학습할 수 있습니다.
+메모리 관리: BERT 모델은 메모리 요구 사항이 크기 때문에, 메모리 부족 문제가 발생할 수 있습니다. 이럴 경우, 배치 크기를 줄이거나 텍스트의 길이를 줄여서 해결할 수 있습니다.
+위 과정대로 모델을 훈련시키고, 예측한 결과를 csv로 저장하고 모델을 .h5 파일로 저장할 수 있습니다.
